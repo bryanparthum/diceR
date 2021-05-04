@@ -1,2 +1,2 @@
 # diceR
- DICE2016 Implementation in R
+ Alex Marten's DICE2016 Implementation in R
