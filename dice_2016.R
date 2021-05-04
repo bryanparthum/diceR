@@ -205,12 +205,17 @@ run_dice = function(perturbation_year=-1,damfun) {
     # equation for damage fraction
     if (missing(damfun)) {
       damfrac[t] = a1*tatm[t]+a2*tatm[t]^a3
-      dam_fun = "DICE2016"
     }
     else if (damfun=="Weitzman") {
-      damfrac[t] = a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5
-      dam_fun = "Weitzman (2012)"
+      damfrac[t] = ifelse(a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5<1,a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5,1)
     }
+    
+    # ## set maximum damage fraction
+    # if (damfrac[t]>=1) {
+    #   damfrac[t]=1 
+    #   else 
+    #     damfrac[t]=damfrac[t]
+    # }
     
     # output gross equation
     ygross[t] = (al[t]*(l[t]/1000)^(1-gama))*(k[t]^gama)
