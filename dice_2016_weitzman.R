@@ -1,16 +1,16 @@
 # time periods (5 years per period)
 time_horizon = 60
-
+  
 # availability of fossil fuels
 fosslim  = 6000      # maximum cumulative extraction fossil fuels (gtc)
 
 # time step
 tstep    = 5         # years per period
-
+  
 # preferences
 elasmu   = 1.45      # elasticity of marginal utility of consumption
 prstp    = .015      # initial rate of social time preference per year
-
+  
 # population and technology
 gama     = .300      # capital elasticity in production function
 pop0     = 7403      # initial world population 2015 (millions)
@@ -44,7 +44,7 @@ mleq     = 1720      # equilibrium concentration in lower strata (gtc)
 # flow paramaters
 b12      = .12       # carbon cycle transition matrix
 b23      = 0.007     # carbon cycle transition matrix
-
+  
 # these are for declaration and are defined later
 # b11      carbon cycle transition matrix
 # b21      carbon cycle transition matrix
@@ -63,13 +63,15 @@ c1       = 0.1005    # climate equation coefficient for upper level
 c3       = 0.088     # transfer coefficient upper to lower stratum
 c4       = 0.025     # transfer coefficient for lower level
 fco22x   = 3.6813    # forcings of equilibrium co2 doubling (wm-2)
-
+  
 # climate damage parameters
 a10      = 0         # initial damage intercept
 # a20                # initial damage quadratic term
 a1       = 0         # damage intercept
 a2       = 0.00236   # damage quadratic term
 a3       = 2.00      # damage exponent
+a4       = 5.07e-6   # Weitzman damage term
+a5       = 6.754     # damage exponent Weitzman 2012
 
 # abatement cost
 expcost2 = 2.6       # exponent of control cost function
@@ -79,7 +81,7 @@ limmiu   = 1.2       # upper limit on control rate after 2150
 tnopol   = 45        # period before which no emissions controls base
 cprice0  = 2         # initial base carbon price (2010$ per tco2)
 gcprice  = .02       # growth rate of base carbon price per year
-
+  
 # scaling and inessential parameters
 # note that these are unnecessary for the calculations
 # they ensure that mu of first period's consumption =1 and pv cons = pv utilty
@@ -152,11 +154,11 @@ for (t in 2:time_horizon) {
   sigma[t] = sigma[t-1]*exp(gsig[t-1]*tstep)
   
   cost1[t] = pbacktime[t]*sigma[t]/expcost2/1000
-  
+
 }
 
-run_dice = function(perturbation_year=-1) {
-  
+run_dice = function(perturbation_year=-1,damfun) {
+
   # variables
   # damfrac[t]      damages as fraction of gross output
   # ygross[t]       gross world product gross of abatement and damages (trillions 2005 usd per year)
@@ -201,13 +203,20 @@ run_dice = function(perturbation_year=-1) {
   for (t in 1:time_horizon) {
     
     # equation for damage fraction
-    damfrac[t] = a1*tatm[t]+a2*tatm[t]^a3 
-    
+    if (missing(damfun)) {
+      damfrac[t] = (a1*tatm[t]+a2*tatm[t]^a3)/(1+a1*tatm[t]+a2*tatm[t]^a3)
+    }
+    else if (damfun=="Weitzman") {
+      # damfrac[t] = ifelse(a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5<1,a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5,1)
+      damfrac[t] = (a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5)/(1+a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5)
+      
+    }
+
     # output gross equation
     ygross[t] = (al[t]*(l[t]/1000)^(1-gama))*(k[t]^gama)
     
     # output net of damages equation
-    ynet[t] = ygross[t]/(1+damfrac[t])
+    ynet[t] = ygross[t]*(1-damfrac[t])
     
     # cost of emissions reductions equation
     abatecost[t] = ygross[t]*cost1[t]*miu[t]^expcost2
@@ -250,21 +259,187 @@ run_dice = function(perturbation_year=-1) {
     
     # temperature-climate equation for atmosphere
     tatm[t+1] = tatm[t]+c1*(forc[t+1]-(fco22x/t2xco2)*tatm[t]-c3*(tatm[t]-tocean[t]))
-    
+
     # temperature-climate equation for lower oceans
     tocean[t+1] = tocean[t]+c4*(tatm[t]-tocean[t])
     
   }
-  
-  return(c)
-  
+
+  # return(c)
+  return(data.frame("consumption"= c,'abatecost'=abatecost,'tatm'=tatm[1:60],'emissions'=e,'ygross'=ygross,'ynet'=ynet, 'capital'=k[1:60], 'savings'=i[1:60], 'dam_frac'=damfrac))
 }
 
-## Recover SCC
-c_base=run_dice()
-perturbation_year = 2030
-c_perturb = run_dice(perturbation_year)
+library(tidyverse)
+library(magrittr)
 
-c_diff = (c_base-c_perturb)[-(1:((perturbation_year-2015)/tstep+1))]
+base = run_dice()
+pert = run_dice(perturbation_year=2030)
+diff = pert-base 
+diff %<>% mutate(dam_fun = 'DICE2016',year=seq(2015,2310,5))
 
-print(sum(c_diff*tstep/(1+.03)^(0:(length(c_diff)-1)*tstep))*1e12/1e9/5)
+base_w = run_dice(damfun="Weitzman")
+pert_w = run_dice(perturbation_year=2030,damfun="Weitzman")
+diff_w = pert_w-base_w 
+diff_w %<>% mutate(dam_fun = 'Weitzman (2012)',year=seq(2015,2310,5))
+
+bases <- rbind(base %>% mutate(dam_fun = 'DICE2016',year=seq(2015,2310,5)),base_w %>% mutate(dam_fun = 'Weitzman (2012)',year=seq(2015,2310,5)))
+diffs <- rbind(diff,diff_w)
+
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+options(scipen=999)
+
+d <- ggplot(diffs) + 
+  geom_line(aes(y=dam_frac,x=year,color=dam_fun)) +
+  labs(title="Damage Fraction",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+s <- ggplot(diffs) + 
+  geom_line(aes(y=savings,x=year,color=dam_fun)) +
+  labs(title="Savings",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+k <- ggplot(diffs) + 
+  geom_line(aes(y=capital,x=year,color=dam_fun)) +
+  labs(title="Capital",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+c <- ggplot(diffs) + 
+  geom_line(aes(y=consumption,x=year,color=dam_fun)) +
+  labs(title="Consumption",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+a <- ggplot(diffs) + 
+  geom_line(aes(y=abatecost,x=year,color=dam_fun)) +
+  labs(title="Abatement Cost",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+
+t <- ggplot(diffs) + 
+  geom_line(aes(y=tatm,x=year,color=dam_fun)) +
+  labs(title="Temperature",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+e <- ggplot(diffs) + 
+  geom_line(aes(y=emissions,x=year,color=dam_fun)) +
+  labs(title="Emissions",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+
+yg <- ggplot(diffs) + 
+  geom_line(aes(y=ygross,x=year,color=dam_fun)) +
+  labs(title="Y-gross",
+       y='',
+       x='Year') +
+  theme_minimal() + theme(legend.position = "none")
+
+
+yn <- ggplot(diffs) + 
+  geom_line(aes(y=ynet,x=year,color=dam_fun)) +
+  labs(title="Y-net",
+       y='',
+       x='Year') +
+  theme_minimal() + theme(legend.position = "none")
+
+legend <- get_legend(
+  ggplot(diffs) + 
+  geom_line(aes(y=ynet,x=year,color=dam_fun)) +
+  labs(color="Difference From CO[2] Pulse in 2030 (1MT):") + theme(legend.position='bottom',legend.key = element_rect(color = NA, fill = NA)))
+
+b <- ggplot()+theme_void()
+
+plot_grid(d,s,k,c,a,t,e,yg,yn,b,legend,b, nrow=4,rel_heights = c(3/10, 3/10, 3/10, 1/10))
+ggsave("differences.png",width=8,height=6)
+
+
+## BASELINES
+d <- ggplot(bases) + 
+  geom_line(aes(y=dam_frac,x=year,color=dam_fun)) +
+  labs(title="Damage Fraction",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+s <- ggplot(bases) + 
+  geom_line(aes(y=savings,x=year,color=dam_fun)) +
+  labs(title="Savings",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+k <- ggplot(bases) + 
+  geom_line(aes(y=capital,x=year,color=dam_fun)) +
+  labs(title="Capital",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+c <- ggplot(bases) + 
+  geom_line(aes(y=consumption,x=year,color=dam_fun)) +
+  labs(title="Consumption",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+a <- ggplot(bases) + 
+  geom_line(aes(y=abatecost,x=year,color=dam_fun)) +
+  labs(title="Abatement Cost",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+
+t <- ggplot(bases) + 
+  geom_line(aes(y=tatm,x=year,color=dam_fun)) +
+  labs(title="Temperature",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+e <- ggplot(bases) + 
+  geom_line(aes(y=emissions,x=year,color=dam_fun)) +
+  labs(title="Emissions",
+       y='',
+       x='') +
+  theme_minimal() + theme(legend.position = "none")
+
+
+yg <- ggplot(bases) + 
+  geom_line(aes(y=ygross,x=year,color=dam_fun)) +
+  labs(title="Y-gross",
+       y='',
+       x='Year') +
+  theme_minimal() + theme(legend.position = "none")
+
+
+yn <- ggplot(bases) + 
+  geom_line(aes(y=ynet,x=year,color=dam_fun)) +
+  labs(title="Y-net",
+       y='',
+       x='Year') +
+  theme_minimal() + theme(legend.position = "none")
+
+legend <- get_legend(
+  ggplot(diffs) + 
+    geom_line(aes(y=ynet,x=year,color=dam_fun)) +
+    labs(color="Baseline:") + theme(legend.position='bottom',legend.key = element_rect(color = NA, fill = NA)))
+
+b <- ggplot()+theme_void()
+
+plot_grid(d,s,k,c,a,t,e,yg,yn,b,legend,b, nrow=4,rel_heights = c(3/10, 3/10, 3/10, 1/10))
+ggsave("baseline.png",width=8,height=6)
