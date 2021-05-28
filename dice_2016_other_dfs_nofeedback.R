@@ -71,6 +71,8 @@ fco22x   = 3.6813    # forcings of equilibrium co2 doubling (wm-2)
 a1       = 0         # damage intercept
 a2       = 0.00236   # damage quadratic term
 a3       = 2.00      # damage exponent
+a4       = 5.07e-6   # Weitzman damage term
+a5       = 6.754     # damage exponent Weitzman 2012
 
 # abatement cost
 expcost2 = 2.6       # exponent of control cost function
@@ -163,7 +165,7 @@ miu[(tnopol+1):length(miu)] = limmiu
 
 
 
-run_dice = function(perturbation_year=-1) {
+run_dice = function(perturbation_year=-1,damfun) {
 
   # variables
   # damfrac[t]      damages as fraction of gross output
@@ -208,7 +210,14 @@ run_dice = function(perturbation_year=-1) {
   for (t in 1:time_horizon) {
 
     # equation for damage fraction
-    damfrac[t] = a1*tatm[t]+a2*tatm[t]^a3
+    if (missing(damfun)) {
+      damfrac[t] = a1*tatm[t]+a2*tatm[t]^a3
+    }
+    else if (damfun=="Weitzman") {
+      # damfrac[t] = ifelse(a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5<1,a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5,1)
+      damfrac[t] = (a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5)/(1+a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5)
+      
+    }
 
     # output gross equation
     ygross[t] = (al[t]*(l[t]/1000)^(1-gama))*(k[t]^gama)
@@ -263,17 +272,123 @@ run_dice = function(perturbation_year=-1) {
 
   }
 
-  return(c)
+  return(list(c_feedback=c,eind_feedback=eind))
 
 }
 
 
+####################################
+########### no feedback to emissions
+####################################
 
-get_scc = function(perturbation_year,discount_rate=.02) {
+run_dice_nf = function(perturbation_year=-1,damfun) {
+  
+  # intialize space for state variables and set starting values
+  damfrac   = array(NA,      time_horizon)
+  ygross    = array(NA,      time_horizon)
+  ynet      = array(NA,      time_horizon)
+  abatecost = array(NA,      time_horizon)
+  y         = array(NA,      time_horizon)
+  i         = array(NA,      time_horizon)
+  c         = array(NA,      time_horizon)
+  k         = array(k0,      time_horizon)
+  # eind      = array(NA,      time_horizon)
+  eind = run_dice()$eind_feedback
+  e         = array(NA,      time_horizon)
+  cca       = array(400,     time_horizon)
+  forc      = array(NA,      time_horizon)
+  mat       = array(mat0,    time_horizon)
+  ml        = array(ml0,     time_horizon)
+  mu        = array(mu0,     time_horizon)
+  tatm      = array(tatm0,   time_horizon)
+  tocean    = array(tocean0, time_horizon)
+  
+  #
+  for (t in 1:time_horizon) {
+    
+    # equation for damage fraction
+    if (missing(damfun)) {
+      damfrac[t] = a1*tatm[t]+a2*tatm[t]^a3
+    }
+    else if (damfun=="Weitzman") {
+      # damfrac[t] = ifelse(a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5<1,a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5,1)
+      damfrac[t] = (a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5)/(1+a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5)
+      
+    }
+    
+    # output gross equation
+    ygross[t] = (al[t]*(l[t]/1000)^(1-gama))*(k[t]^gama)
+    
+    # output net of damages equation
+    ynet[t] = ygross[t]*(1-damfrac[t])
+    
+    # cost of emissions reductions equation
+    abatecost[t] = ygross[t]*cost1[t]*miu[t]^expcost2
+    
+    # output net equation
+    y[t] = ynet[t]-abatecost[t]
+    
+    # savings rate equation
+    i[t] = s*y[t]
+    
+    # consumption equation
+    c[t] = y[t]-i[t]
+    
+    # capital balance equation
+    k[t+1] = (1-dk)^tstep*k[t]+tstep*i[t]
+    
+    # industrial emissions
+    # eind[t] = sigma[t]*ygross[t]*(1-(miu[t]))
+    
+    if (perturbation_year==(2015+t*tstep))
+      eind[t] = eind[t]+1
+    
+    # emissions equation
+    e[t] = eind[t]+etree[t]
+    
+    # cumulative industrial carbon emissions
+    cca[t+1] = cca[t]+eind[t]*5/3.666
+    
+    # atmospheric concentration equation
+    mat[t+1] = mat[t]*b11+mu[t]*b21+e[t]*(5/3.666)
+    
+    # lower ocean concentration
+    ml[t+1] = ml[t]*b33+mu[t]*b23
+    
+    # shallow ocean concentration
+    mu[t+1] = mat[t]*b12+mu[t]*b22+ml[t]*b32
+    
+    # radiative forcing equation
+    forc[t+1] = fco22x*((log((mat[t+1]/588.000))/log(2)))+forcoth[t+1]
+    
+    # temperature-climate equation for atmosphere
+    tatm[t+1] = tatm[t]+c1*(forc[t+1]-(fco22x/t2xco2)*tatm[t]-c3*(tatm[t]-tocean[t]))
+    
+    # temperature-climate equation for lower oceans
+    tocean[t+1] = tocean[t]+c4*(tatm[t]-tocean[t])
+    
+  }
+  
+  return(c_no_feedback=c)
+  
+}
 
-  c_base = run_dice()
 
-  c_perturb = run_dice(perturbation_year)
+################################
+###################### feedbacks
+################################
+
+get_scc = function(perturbation_year,discount_rate=.02,damfun) {
+
+  # equation for damage fraction
+  if (missing(damfun)) {
+    c_base = run_dice()$c_feedback
+    c_perturb = run_dice(perturbation_year)$c_feedback
+  }
+  else if (damfun=="Weitzman") {
+    c_base = run_dice(damfun="Weitzman")$c_feedback
+    c_perturb = run_dice(perturbation_year,damfun="Weitzman")$c_feedback
+  }
 
   c_diff = (c_base-c_perturb)[-(1:((perturbation_year-2015)/tstep))]
 
@@ -282,19 +397,24 @@ get_scc = function(perturbation_year,discount_rate=.02) {
 
 }
 
-
-
-get_scc_path = function(years=seq(2020,2100,by=5)) {
-  results = NULL
-  for (year in years)
+get_scc_path = function(damfun,years=seq(2020,2100,by=5)) {
+  if (missing(damfun)) {
+    results = NULL
+    for (year in years)
     results = rbind(results,get_scc(year))
-  return(results)
+    return(results)
+  }
+  else if (damfun=="Weitzman") {
+    results = NULL
+    for (year in years)
+    results = rbind(results,get_scc(year,damfun='Weitzman'))
+    return(results)
+  }
 }
 
 
-
 results = get_scc_path() %>%
-          mutate(Damages="DICE2016 R2")
+          mutate(Damages="DICE2016")
 
 # howard and sterner (2017) prefered specification
 # cofficient estimates and standard errors (table 2 specification (4))
@@ -311,21 +431,114 @@ temp = get_scc_path() %>%
        mutate(Damages="Howard and Sterner (2017) - Non-Cat")
 results = rbind(results,temp)
 
-a2 = ((0.5950+0.113)*1.25+0.260)/100
-temp = get_scc_path() %>%
-       mutate(Damages="Howard and Sterner (2017) - Total")
-results = rbind(results,temp)
+# a2 = ((0.5950+0.113)*1.25+0.260)/100
+# temp = get_scc_path() %>%
+#        mutate(Damages="Howard and Sterner (2017) - Total")
+# results = rbind(results,temp)
 
-ggplot(results)+
+# a1 = 0.0127
+# a2 = -0.0005
+# temp = get_scc_path() %>%
+#   mutate(Damages="Burke et al (2015) - PAGE-ICE/2020")
+# results = rbind(results,temp)
+# 
+# a1 = -0.001126
+# a2 = 0.000818
+# temp = get_scc_path() %>%
+#   mutate(Damages="Waldhoff et al. (2014) - FUND3.9")
+# results = rbind(results,temp)
+# 
+# a1 = 0
+# a2 = 0.00236
+# temp = get_scc_path(damfun='Weitzman') %>%
+#   mutate(Damages="Weitzman (2012)")
+# results = rbind(results,temp)
+
+results$Damages  <- with(results,reorder(Damages,-scc))
+
+################################
+################### no feedbacks
+################################
+
+get_scc_nf = function(perturbation_year,discount_rate=.02,damfun) {
+  
+  # equation for damage fraction
+  if (missing(damfun)) {
+    c_base_nf = run_dice_nf()
+    c_perturb_nf = run_dice_nf(perturbation_year)
+  }
+  else if (damfun=="Weitzman") {
+    c_base_nf = run_dice_nf(damfun="Weitzman")
+    c_perturb_nf = run_dice_nf(perturbation_year,damfun="Weitzman")
+  }
+  
+  c_diff_nf = (c_base_nf-c_perturb_nf)[-(1:((perturbation_year-2015)/tstep))]
+  
+  data.frame(year=perturbation_year,
+             scc=sum(c_diff_nf*tstep/(1+discount_rate)^(0:(length(c_diff_nf)-1)*tstep))*1e12/1e9/5)
+  
+}
+
+
+
+get_scc_path_nf = function(damfun,years=seq(2020,2100,by=5)) {
+  if (missing(damfun)) {
+    results_nf = NULL
+    for (year in years)
+      results_nf = rbind(results_nf,get_scc_nf(year))
+    return(results_nf)
+  }
+  else if (damfun=="Weitzman") {
+    results_nf = NULL
+    for (year in years)
+      results_nf = rbind(results_nf,get_scc_nf(year,damfun='Weitzman'))
+    return(results_nf)
+  }
+}
+
+a2 = 0.00236
+results_nf = get_scc_path_nf() %>%
+  mutate(Damages="DICE2016 - No Em. Feedback")
+
+a2 = (0.5950*1.25)/100
+temp = get_scc_path_nf() %>%
+  mutate(Damages="Howard and Sterner (2017) - Non-Cat, No Em. Feedback")
+results_nf = rbind(results_nf,temp)
+
+results_nf$Damages  <- with(results_nf,reorder(Damages,-scc))
+
+################################
+########################### plot
+################################
+
+res = rbind(results,results_nf)
+res$Damages  <- with(res,reorder(Damages,-scc))
+
+ggplot(res)+
   geom_line(aes(x=year,y=scc,color=Damages),size=1)+
   labs(x="Perturbation Year",y="SC-CO2 [2010$/t CO2]")+
       guides(color=guide_legend(title="Damage Specification"))+
-      theme(axis.line.x      = element_line(colour="black"),
-            axis.line.y      = element_line(colour="black"),
-            panel.grid.minor = element_blank(),
-            panel.border     = element_blank(),
-            panel.background = element_blank(),
-            legend.key       = element_blank(),
-            legend.position  = c(.3,.75))
+      theme_minimal() + theme(legend.position  = c(.3,.75))
 
-ggsave("scc_plot.png",device="png")
+
+
+res_w = cbind(results,results_nf) 
+colnames(res_w) <- c("year","scc","Damages","year_nf","scc_nf","Damages_nf")
+res_w %<>% mutate(scc_diff = scc_nf-scc,
+                  scc_diff_pct = (1-scc/scc_nf) * 100)
+
+res_w$Damages  <- with(res_w,reorder(Damages,-scc_diff))
+ggplot(res_w)+
+  geom_line(aes(x=year,y=scc_diff,color=Damages),size=1)+
+  labs(title="Difference in the SC-CO2 - Dollars",x="Perturbation Year",y="Difference in SC-CO2 ($)")+
+  guides(color=guide_legend(title="Damage Specification"))+
+  theme_minimal() + theme(legend.position  = c(.6,.5))
+
+res_w$Damages  <- with(res_w,reorder(Damages,-scc_diff_pct))
+ggplot(res_w)+
+  geom_line(aes(x=year,y=scc_diff_pct,color=Damages),size=1)+
+  labs(title="Difference in the SC-CO2 - %",x="Perturbation Year",y="Difference in SC-CO2 (%)")+
+  guides(color=guide_legend(title="Damage Specification"))+
+  theme_minimal() + theme(legend.position  = c(.6,.5))
+
+# ggsave("scc_plot.png",device="png")
