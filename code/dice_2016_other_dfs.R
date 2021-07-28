@@ -336,12 +336,14 @@ temp = get_scc_path() %>%
        mutate(Damages="Howard and Sterner (2017) - Total")
 results = rbind(results,temp)
 
+## this is wrong, currently specified in levels not growth, fix later 
 a1 = 0.0127
 a2 = -0.0005
 temp = get_scc_path() %>%
   mutate(Damages="Burke et al (2015) - PAGE-ICE/2020")
 results = rbind(results,temp)
 
+## this is wrong, currently specified in levels not growth, fix later 
 a1 = -0.001126
 a2 = 0.000818
 temp = get_scc_path() %>%
