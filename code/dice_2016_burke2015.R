@@ -186,10 +186,14 @@ run_dice = function(perturbation_year=-1) {
 
   # intialize space for state variables and set starting values
   damfrac   = array(NA,      time_horizon)
+ 
+  ######################################################################### add Burke (2015) parts
   ygross_orig = array(NA,    time_horizon) ## Y Original
   ygross    = array(NA,      time_horizon)
   ypc       = array(NA,      time_horizon) ## YPC
   ypc_growth= array(NA,      time_horizon) ## YPC growth
+  #########################################################################
+  
   ynet      = array(NA,      time_horizon)
   abatecost = array(NA,      time_horizon)
   y         = array(NA,      time_horizon)
@@ -212,6 +216,7 @@ run_dice = function(perturbation_year=-1) {
     # equation for damage fraction
     damfrac[t] = a1*tatm[t]+a2*tatm[t]^a3
 
+    ################################################## start tinkering with damages as ypc and ypc growth rate
     # output gross equation
     ygross_orig[t] = (al[t]*(l[t]/1000)^(1-gama))*(k[t]^gama)
     
@@ -224,9 +229,11 @@ run_dice = function(perturbation_year=-1) {
     ygross[t] = ypc[t]*(l[t]/1000)
     
     # output net of damages equation
-    # ynet[t] = ygross[t]*(1-damfrac[t]) ## DICE 
+    # ynet[t] = ygross[t]*(1-damfrac[t]) ## DICE2016
     ynet[t] = ygross[t]
     
+    
+    ################################################## back to DICE
     # cost of emissions reductions equation
     abatecost[t] = ygross[t]*cost1[t]*miu[t]^expcost2
 
@@ -274,15 +281,8 @@ run_dice = function(perturbation_year=-1) {
 
   }
 
-  return(c)
+  return(list(gdp_loss=damfrac,temp=tatm))
 
 }
 
-c_base = run_dice()
-
-perturbation_year = 2020
-c_perturb = run_dice(perturbation_year)
-
-c_diff = (c_base-c_perturb)[-(1:((perturbation_year-2015)/tstep))]
-
-print(sum(c_diff*tstep/(1+.03)^(0:(length(c_diff)-1)*tstep))*1e12/1e9/5)
+burke = run_dice()
