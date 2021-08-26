@@ -26,10 +26,14 @@ options(scipen=999) # remove scientific notation
 #################### Build 
 ##########################
 
-page <- read_excel('page_gdp_loss.xlsx') %>% group_by(year) %>% 
-  summarise(temp=mean(temp),gdp=sum(gdp),damages=sum(damages),gdp_loss=mean(gdp_loss_perc)) %>% 
-  filter(temp<5) %>% 
-  mutate(labels=case_when(temp==max(temp)~'Kikstra et al. 2021 \nPAGE2020',TRUE~''))
+page <- read_excel('page_gdp_loss.xlsx') %>% group_by(year) %>% mutate(gdp_weight=gdp/sum(gdp)) %>%
+  summarise(rtl_temp=sum(rtl_abs_0_temp*gdp_weight),temp=sum(rtl_realized_temp*gdp_weight),gdp=sum(gdp),gdp_loss_market=sum(gdp_loss_market*gdp_weight),gdp_loss_nonmarket=sum(gdp_loss_nonmarket*gdp_weight),gdp_loss=sum(gdp_loss*gdp_weight)) %>% 
+  filter(year<=2300) %>%
+  mutate(labels=case_when(temp==max(temp)~'Kikstra et al. (2021) \nPAGE2020',TRUE~''),
+         labels_mkt=case_when(temp==max(temp)~'Kikstra et al. (2021) \nPAGE2020 - Market Only',TRUE~''))
+
+fund <- read_excel('fund_gdp_loss.xlsx') %>% filter(temp<=4.8) %>% 
+  mutate(labels=case_when(temp==max(temp)~'A&T (2014) \nFUND3.9',TRUE~''))
 
 ## TABLE 2 COLUMN 4 LESS THAN 4 DEG
 ## t2 |       .5953827    .1904833      3.13   0.014     .1561274    1.034638
@@ -46,7 +50,7 @@ page <- read_excel('page_gdp_loss.xlsx') %>% group_by(year) %>%
 ## cross |     1.7005      .3306892     5.14   0.000     .9636784    2.437321
 
 ## temp vector
-temps = tibble(temp=seq(0,4.7,0.1))
+temps = tibble(temp=seq(0,4.8,0.1))
 
 # ## damage functions
 
@@ -64,16 +68,16 @@ temps = tibble(temp=seq(0,4.7,0.1))
 
 # # # # ## ALL TEMPS FOR HOWARD AND STERNER, INCLUDING GREATER THAN 4 DEG
 dams = temps %>%
-  mutate(`Tol (2009)`        = 0.00267*temp^2,
-         `Nordhaus and Moffat (2017) \nDICE2016`        = 0.00236*temp^2,
-         `Nordhaus and Boyer (2009) \nDICE2010`        = 0.00205*temp^2,
+  mutate(#`Tol (2009)`        = 0.00267*temp^2,
+         `N&M (2017) \nDICE2016`        = 0.00236*temp^2,
+         # `Nordhaus and Boyer (2009) \nDICE2010`        = 0.00205*temp^2,
+         `Burke et al. (2015)` = -0.0127*temp+0.0005*(temp^2+2*temp*20.35), ## Global average rtl temperature in 2100: 20.35
          # `Nordhaus (2019)`        = (0.00236*3.5)*temp^2,
          # `Weitzman (2012)`                              = (0.00236*temp^2 + 5.07e-6*temp^6.754)/(1+0.00236*temp^2 + 5.07e-6*temp^6.754),
          # `Howard and Sterner (2017) \nMarket only`      = (0.3181497/100)*temp^2,
          `H&S (2017) \nNon-catastrophic` = ((0.3181497*1.25)/100)*temp^2,
-         `H&S  (2017) \n+ Catastrophic`     = (((0.3181497)*1.25+0.3622743)/100)*temp^2,
-         `H&S  (2017) \n+ Productivity`     = (((0.3181497+0.3982305)*1.25)/100)*temp^2)
-
+         `H&S  (2017) \n+ Productivity`     = ((0.3181497+0.3982305)/100)*temp^2,
+         `H&S  (2017) \n+ Productivity \n+ Catastrophic`     = ((0.3181497+0.3622743+0.3982305)/100)*temp^2)
 
 dams %<>% pivot_longer(., cols=!temp, names_to='damage_fun', values_to='gdp_loss')
 
@@ -119,21 +123,27 @@ data = left_join(dams,dams_unc) %>% mutate(gdp_loss_sd=case_when(is.na(gdp_loss_
 ##################### Plot 
 ##########################
 
-data %<>% mutate(labels=case_when(temp==4.7~damage_fun,TRUE~''),
+data %<>% mutate(labels=case_when(temp==4.8~damage_fun,TRUE~''),
                  colors=str_extract(damage_fun, '[A-Za-z]+'))
 
 data %>% 
   ggplot() +
   geom_line(aes(x=temp,y=gdp_loss,group=damage_fun,color=damage_fun)) +
   geom_line(data=page,aes(x=temp,y=gdp_loss)) +
+  geom_line(data=fund,aes(x=temp,y=gdp_loss)) +
+  # geom_line(data=page,aes(x=temp,y=gdp_loss_market)) +
   # geom_ribbon(aes(x=temp, ymin=gdp_loss-(1.64485*gdp_loss_sd), ymax=gdp_loss+(1.64485*gdp_loss_sd), fill=colors, group=damage_fun), color=NA, linetype='dotted',alpha = 0.05) +
-  geom_label_repel(aes(x=temp,y=gdp_loss,color=damage_fun,label=labels), size=4,max.overlaps=100,nudge_x =0.5) +
-  geom_label_repel(data=page,aes(x=temp,y=gdp_loss,label=labels), size=4,max.overlaps=100,nudge_x =0.5) +
+  geom_label_repel(aes(x=temp,y=gdp_loss,color=damage_fun,label=labels), size=3.5,max.overlaps=100,nudge_x=.75) +
+  geom_label_repel(data=page,aes(x=temp,y=gdp_loss,label=labels), size=3.5,max.overlaps=100,nudge_x=.75,nudge_y=-0.0075) +
+  geom_label_repel(data=fund,aes(x=temp,y=gdp_loss,label=labels), size=3.5,max.overlaps=100,nudge_x=.75) +
+  # geom_label_repel(data=page,aes(x=temp,y=gdp_loss_market,label=labels_mkt), size=4,max.overlaps=100,nudge_x =0.5) +
+  geom_segment(aes(x=1.1, xend=1.1, y=-0.005, yend=0.05), colour="grey") +
+  geom_label(x=1.1,y=0.05,label='IPCC AR6 \nCurrent Level', label.padding=unit(0.45, "lines"), label.size = 0.35, size=4) +
   scale_color_manual(values=wes_palette(name="BottleRocket1")) +
   scale_fill_manual(values=wes_palette(name="BottleRocket1")) +
-  scale_x_continuous(breaks=c(0,1,2,3,4,5), limits=c(0,6)) +
+  scale_x_continuous(breaks=c(0,1,2,3,4,5), limits=c(0,6.5)) +
   scale_y_continuous(breaks=c(0,0.05,0.10,0.15,0.20,0.25,0.30,0.35),labels=scales::percent_format()) +
-  labs(x="Change in Temperature",y="GDP Loss") +
+  labs(x="Change in Temperature from Pre-industrial Levels (C)",y="Damages Scaled as % of GDP") +
   theme_minimal() + 
   theme(legend.position="none",
         axis.title=element_text(size=18),
