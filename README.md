@@ -4,7 +4,7 @@
 This repo contains code for William Nordhaus' DICE2016R model as outlined in "[Revisiting the social cost of carbon](https://www.pnas.org/content/114/7/1518)". 
 
 > **Abstract:** 
->  Parameters and Functions are drawn directly from the GAMS code for DICE2016R. Compiled and written by Alex Marten.
+>  Parameters and Functions are drawn directly from the GAMS code for DICE2016R. The replication (`code/dice2016.R`) was compiled and written by Alex Marten.
 
 ## Replication instructions
 Click on the "fork" button at the very top right of the page to create an independent copy of the repo within your own GitHub account. Alternatively, click on the green "clone or download" button just below that to download the repo to your local computer. 
