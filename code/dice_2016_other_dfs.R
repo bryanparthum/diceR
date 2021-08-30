@@ -380,7 +380,7 @@ ggplot()+
   geom_label_repel(aes(x=case_when(year==2075~year,TRUE~NA_real_),y=scc,color=Damages,label=Damages), size=3,max.overlaps=100,nudge_x=10) +
   scale_x_continuous(breaks=c(2020,2040,2060,2080), limits=c(2020,2090)) +
   scale_y_continuous(breaks=seq(0,1000,100),labels=scales::dollar_format()) +
-  labs(title='SC-CO2 Under DICE2016R Assumptions and 3% Constant Discount Rate',x="Perturbation Year",y="SC-CO2 (2020$)")+
+  labs(title='SC-CO2 Under DICE2016R Assumptions and 3% Constant Discount Rate',x="Emissions Year",y="SC-CO2 (2020$)")+
   guides(color=guide_legend(title="Damage Specification"))+
   scale_color_manual(values=wes_palette(name="BottleRocket1")) +
   theme_minimal() + 
