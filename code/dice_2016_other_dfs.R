@@ -1,5 +1,6 @@
 library(dplyr)
 library(ggplot2)
+library(wesanderson)
 
 # time periods (5 years per period)
 time_horizon = 60
@@ -214,9 +215,10 @@ run_dice = function(perturbation_year=-1,damfun) {
       damfrac[t] = a1*tatm[t]+a2*tatm[t]^a3
     }
     else if (damfun=="Weitzman") {
-      # damfrac[t] = ifelse(a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5<1,a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5,1)
       damfrac[t] = (a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5)/(1+a1*tatm[t]+a2*tatm[t]^a3+a4*tatm[t]^a5)
-      
+    }
+    else if (damfun=="Burke") {
+      damfrac[t] = -0.0127*tatm[t]+0.0005*(tatm[t]^2+2*tatm[t]*20.35)  
     }
 
     # output gross equation
@@ -287,6 +289,10 @@ get_scc = function(perturbation_year,discount_rate=.02,damfun) {
     c_base = run_dice(damfun="Weitzman")
     c_perturb = run_dice(perturbation_year,damfun="Weitzman")
   }
+  else if (damfun=="Burke") {
+    c_base = run_dice(damfun="Burke")
+    c_perturb = run_dice(perturbation_year,damfun="Burke")
+  }
 
   c_diff = (c_base-c_perturb)[-(1:((perturbation_year-2015)/tstep))]
 
@@ -310,59 +316,70 @@ get_scc_path = function(damfun,years=seq(2020,2100,by=5)) {
     results = rbind(results,get_scc(year,damfun='Weitzman'))
     return(results)
   }
+  else if (damfun=="Burke") {
+      results = NULL
+      for (year in years)
+        results = rbind(results,get_scc(year,damfun='Burke'))
+      return(results)
+  }
 }
 
 
 results = get_scc_path() %>%
           mutate(Damages="DICE2016 R2")
 
-# howard and sterner (2017) prefered specification
-# cofficient estimates and standard errors (table 2 specification (4))
-# t2       0.595 (0.190)
-# cat_t2   0.260 (0.267)
-# prod_t2  0.113 (0.125)
-#
-# Non-catastrophic damage excluding productivity: 0.5950*1.25
-# Non-catastrophic and catastrophic excluding productivity: 0.5950*1.25+0.260
-# Total Damages including productivity: (0.5950+0.113)*1.25+0.260
-
-a2 = (0.5950*1.25)/100
-temp = get_scc_path() %>%
-       mutate(Damages="Howard and Sterner (2017) - Non-Cat")
+## Burke et al 2015
+temp = get_scc_path(damfun='Burke') %>%
+  mutate(Damages="Burke et al. (2015)")
 results = rbind(results,temp)
 
-a2 = ((0.5950+0.113)*1.25+0.260)/100
-temp = get_scc_path() %>%
-       mutate(Damages="Howard and Sterner (2017) - Total")
-results = rbind(results,temp)
-
-## this is wrong, currently specified in levels not growth, fix later 
-a1 = 0.0127
-a2 = -0.0005
-temp = get_scc_path() %>%
-  mutate(Damages="Burke et al (2015) - PAGE-ICE/2020")
-results = rbind(results,temp)
-
-## this is wrong, currently specified in levels not growth, fix later 
-a1 = -0.001126
-a2 = 0.000818
-temp = get_scc_path() %>%
-  mutate(Damages="Waldhoff et al. (2014) - FUND3.9")
-results = rbind(results,temp)
-
-a1 = 0
-a2 = 0.00236
+## Weitzman
 temp = get_scc_path(damfun='Weitzman') %>%
   mutate(Damages="Weitzman (2012)")
 results = rbind(results,temp)
 
+## other damage functions
+a2 = (0.3181497/100)
+temp = get_scc_path() %>%
+      mutate(Damages="H&S (2017) - Market Only")
+results = rbind(results,temp)
 
+a2 = ((0.3181497*1.25)/100)
+temp = get_scc_path() %>%
+      mutate(Damages="H&S (2017) \nNon-catastrophic")
+results = rbind(results,temp)
+
+a2 = ((0.3181497+0.3982305)/100)
+temp = get_scc_path() %>%
+       mutate(Damages="H&S (2017) \n+ Productivity")
+results = rbind(results,temp)
+
+a2 = ((0.3181497+0.3622743+0.3982305)/100)
+temp = get_scc_path() %>%
+       mutate(Damages="H&S (2017) \n+ Productivity \n+ Catastrophic")
+results = rbind(results,temp)
+
+# ## this is wrong, currently specified in levels not growth, fix later 
+# a1 = -0.001126
+# a2 = 0.000818
+# temp = get_scc_path() %>%
+#   mutate(Damages="Waldhoff et al. (2014) - FUND3.9")
+# results = rbind(results,temp)
+
+
+## plot
 results$Damages  <- with(results,reorder(Damages,-scc))
 
 ggplot(results)+
   geom_line(aes(x=year,y=scc,color=Damages),size=1)+
   labs(x="Perturbation Year",y="SC-CO2 [2010$/t CO2]")+
       guides(color=guide_legend(title="Damage Specification"))+
-      theme_minimal() + theme(legend.position  = c(.3,.75))
+  scale_color_manual(values=wes_palette(name="BottleRocket1")) +
+  theme_minimal() + 
+  theme(legend.position  = c(.3,.75),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=16),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())
 
 ggsave("scc_plot.png",device="png")
