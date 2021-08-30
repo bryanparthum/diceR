@@ -1,6 +1,7 @@
 library(dplyr)
 library(ggplot2)
 library(wesanderson)
+library(ggrepel)
 
 # time periods (5 years per period)
 time_horizon = 60
@@ -278,7 +279,7 @@ run_dice = function(perturbation_year=-1,damfun) {
 
 }
 
-get_scc = function(perturbation_year,discount_rate=.02,damfun) {
+get_scc = function(perturbation_year,discount_rate=.03,damfun) {
 
   # equation for damage fraction
   if (missing(damfun)) {
@@ -326,27 +327,27 @@ get_scc_path = function(damfun,years=seq(2020,2100,by=5)) {
 
 
 results = get_scc_path() %>%
-          mutate(Damages="DICE2016 R2")
+          mutate(Damages="N&M (2017) \nDICE2016")
 
 ## Burke et al 2015
 temp = get_scc_path(damfun='Burke') %>%
   mutate(Damages="Burke et al. (2015)")
 results = rbind(results,temp)
 
-## Weitzman
-temp = get_scc_path(damfun='Weitzman') %>%
-  mutate(Damages="Weitzman (2012)")
-results = rbind(results,temp)
+# ## Weitzman
+# temp = get_scc_path(damfun='Weitzman') %>%
+#   mutate(Damages="Weitzman (2012)")
+# results = rbind(results,temp)
 
 ## other damage functions
 a2 = (0.3181497/100)
 temp = get_scc_path() %>%
-      mutate(Damages="H&S (2017) - Market Only")
+      mutate(Damages="H&S (2017) \nMarket Only")
 results = rbind(results,temp)
 
 a2 = ((0.3181497*1.25)/100)
 temp = get_scc_path() %>%
-      mutate(Damages="H&S (2017) \nNon-catastrophic")
+      mutate(Damages="H&S (2017) \n+ 25% Nonmarket")
 results = rbind(results,temp)
 
 a2 = ((0.3181497+0.3982305)/100)
@@ -366,20 +367,27 @@ results = rbind(results,temp)
 #   mutate(Damages="Waldhoff et al. (2014) - FUND3.9")
 # results = rbind(results,temp)
 
+## inflate from 2010 dollars to 2020: https://apps.bea.gov/iTable/iTable.cfm?reqid=19&step=3&isuri=1&select_all_years=0&nipa_table_list=13&series=a&first_year=2010&last_year=2020&scale=-99&categories=survey&thetable=
+inflator = 113.648/96.166
+results %>% mutate(scc=scc*inflator)
 
 ## plot
 results$Damages  <- with(results,reorder(Damages,-scc))
 
-ggplot(results)+
+results %>% filter(year<=2080) %>% 
+ggplot()+
   geom_line(aes(x=year,y=scc,color=Damages),size=1)+
-  labs(x="Perturbation Year",y="SC-CO2 [2010$/t CO2]")+
-      guides(color=guide_legend(title="Damage Specification"))+
+  geom_label_repel(aes(x=case_when(year==2075~year,TRUE~NA_real_),y=scc,color=Damages,label=Damages), size=3,max.overlaps=100,nudge_x=10) +
+  scale_x_continuous(breaks=c(2020,2040,2060,2080), limits=c(2020,2090)) +
+  scale_y_continuous(breaks=seq(0,1000,100),labels=scales::dollar_format()) +
+  labs(title='SC-CO2 Under DICE2016R Assumptions and 3% Constant Discount Rate',x="Perturbation Year",y="SC-CO2 (2020$)")+
+  guides(color=guide_legend(title="Damage Specification"))+
   scale_color_manual(values=wes_palette(name="BottleRocket1")) +
   theme_minimal() + 
-  theme(legend.position  = c(.3,.75),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=16),
-        panel.grid.major.x = element_blank(),
-        panel.grid.minor.x = element_blank())
+  theme(legend.position  = 'none',
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=16))
+        # panel.grid.major.x = element_blank(),
+        # panel.grid.minor.x = element_blank())
 
-ggsave("scc_plot.png",device="png")
+ggsave("scc_plot.png",device="png",width=11,height=8)
