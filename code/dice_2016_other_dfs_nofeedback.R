@@ -1,4 +1,6 @@
 library(dplyr)
+library(tidyverse)
+library(magrittr)
 library(ggplot2)
 
 # time periods (5 years per period)
